@@ -23,163 +23,109 @@ def signal_handler(sig, frame):
 
 
 def get_GPU_data():
+    """Initializes NVML, sends a single static GPU info payload, then enters a loop to send dynamic metrics."""
     global iteration
 
+    handles = []
     try:
         pynvml.nvmlInit()
-        print(json.dumps({"status": "ready"}), flush=True)
-    except pynvml.NVMLError_LibraryNotFound:
-        # No NVIDIA drivers installed - gracefully send empty GPU data
-        error_msg = {"status": "no_gpu", "message": "NVIDIA drivers not found"}
-        print(json.dumps(error_msg), file=sys.stderr, flush=True)
-
-        # Send ready status as a proper status message (not mixed with array)
-        status_msg = {"status": "ready_no_gpu"}
-        print(json.dumps(status_msg), flush=True)
-        time.sleep(0.1)
-
-        # Keep sending empty GPU arrays
-        while True:
-            print(json.dumps([]), flush=True)
-            time.sleep(POLL_INTERVAL)
-    except Exception as e:
-        # Other errors
-        error_msg = {"error": f"NVML init failed: {str(e)}"}
-        print(json.dumps(error_msg), file=sys.stderr, flush=True)
-
-        # Send ready status
-        status_msg = {"status": "ready_no_gpu"}
-        print(json.dumps(status_msg), flush=True)
-        time.sleep(0.1)  # Small delay to ensure status is processed
-
-        # Keep sending empty GPU arrays instead of crashing
-        while True:
-            print(json.dumps([]), flush=True)
-            time.sleep(POLL_INTERVAL)
-
-    # Get GPU count and handles
-    try:
         device_count = pynvml.nvmlDeviceGetCount()
+
         if device_count == 0:
-            print(
-                json.dumps({"error": "No GPUs detected"}), file=sys.stderr, flush=True
-            )
-            # Keep sending empty arrays
+            # Consistent ready message even with no GPUs
+            print(json.dumps({"status": "ready_no_gpu", "gpus": []}), flush=True)
+            # Keep sending empty arrays so the agent doesn't hang
             while True:
                 print(json.dumps([]), flush=True)
                 time.sleep(POLL_INTERVAL)
 
-        handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(device_count)]
-    except Exception as e:
+        # Get static info for all GPUs
+        static_gpu_info = []
+        for i in range(device_count):
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            handles.append(handle)
+            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+            static_gpu_info.append(
+                {
+                    "id": i,
+                    "name": pynvml.nvmlDeviceGetName(handle),
+                    "uuid": pynvml.nvmlDeviceGetUUID(handle),
+                    "memoryTotal": round(mem_info.total / (1024**2), 2),  # MB
+                }
+            )
+
+        # Send one-time static info payload
+        print(json.dumps({"status": "ready", "gpus": static_gpu_info}), flush=True)
+        time.sleep(0.1)  # Brief pause to ensure agent processes this message
+
+    except pynvml.NVMLError_LibraryNotFound:
+        # No NVIDIA drivers installed
         print(
-            json.dumps({"error": f"Failed to get GPU handles: {str(e)}"}),
+            json.dumps({"status": "no_gpu", "message": "NVIDIA drivers not found"}),
             file=sys.stderr,
             flush=True,
         )
-        pynvml.nvmlShutdown()
-        sys.exit(1)
+        print(json.dumps({"status": "ready_no_gpu", "gpus": []}), flush=True)
+        while True:
+            print(json.dumps([]), flush=True)
+            time.sleep(POLL_INTERVAL)
+    except Exception as e:
+        # Other errors during initialization
+        print(
+            json.dumps({"error": f"NVML init failed: {str(e)}"}),
+            file=sys.stderr,
+            flush=True,
+        )
+        print(json.dumps({"status": "ready_no_gpu", "gpus": []}), flush=True)
+        while True:
+            print(json.dumps([]), flush=True)
+            time.sleep(POLL_INTERVAL)
 
-    # Main loop
+    # Main loop for dynamic metrics
     while True:
         try:
-            gpu_list = []
+            dynamic_metrics = []
             iteration += 1
 
             for i, handle in enumerate(handles):
-                # Get utilization rates
                 utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
-
-                # Get memory info
                 mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-
-                # Get temperature
                 temp = pynvml.nvmlDeviceGetTemperature(
                     handle, pynvml.NVML_TEMPERATURE_GPU
                 )
 
-                # Get fan speed (may not be available on all GPUs)
-                try:
-                    fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
-                except pynvml.NVMLError:
-                    fan_speed = None
-
-                # Get power info
-                try:
-                    power_draw = (
-                        pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-                    )  # Convert mW to W
-                    power_limit = (
-                        pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000.0
-                    )
-                except pynvml.NVMLError:
-                    power_draw = None
-                    power_limit = None
-
-                # Get clock speeds
-                try:
-                    clock_graphics = pynvml.nvmlDeviceGetClockInfo(
-                        handle, pynvml.NVML_CLOCK_GRAPHICS
-                    )
-                    clock_memory = pynvml.nvmlDeviceGetClockInfo(
-                        handle, pynvml.NVML_CLOCK_MEM
-                    )
-                    clock_sm = pynvml.nvmlDeviceGetClockInfo(
-                        handle, pynvml.NVML_CLOCK_SM
-                    )
-                except pynvml.NVMLError:
-                    clock_graphics = clock_memory = clock_sm = None
-
-                # Get GPU name and UUID
-                name = pynvml.nvmlDeviceGetName(handle)
-                uuid = pynvml.nvmlDeviceGetUUID(handle)
-
-                gpu_list.append(
+                dynamic_metrics.append(
                     {
-                        "id": i,
-                        "uuid": uuid,
-                        "name": name,
-                        "load": round(
-                            utilization.gpu / 100.0, 3
-                        ),  # Convert to 0-1 range
+                        "id": i,  # ID to link with static info
+                        "load": round(utilization.gpu / 100.0, 3),  # 0-1 range
                         "memoryUtil": round(
                             mem_info.used / mem_info.total, 3
                         ),  # 0-1 range
-                        "memoryTotal": round(
-                            mem_info.total / (1024**2), 2
-                        ),  # Convert to MB
-                        "memoryFree": round(mem_info.free / (1024**2), 2),
-                        "memoryUsed": round(mem_info.used / (1024**2), 2),
+                        "memoryUsed": round(mem_info.used / (1024**2), 2),  # MB
                         "temperature": round(temp, 1),
-                        "fanspeed": fan_speed,
-                        "powerDraw": round(power_draw, 2)
-                        if power_draw is not None
-                        else None,
-                        "powerLimit": round(power_limit, 2)
-                        if power_limit is not None
-                        else None,
-                        "clocks": {
-                            "graphics": clock_graphics,
-                            "memory": clock_memory,
-                            "sm": clock_sm,
-                        },
-                        "_metadata": {
-                            "timestamp": time.time(),
-                            "uptime": round(time.time() - start_time, 2),
-                            "iteration": iteration,
-                        },
                     }
                 )
 
-            print(json.dumps(gpu_list))
-            sys.stdout.flush()
+            # Print the list of dynamic metrics
+            print(json.dumps(dynamic_metrics), flush=True)
 
         except Exception as e:
-            print(json.dumps({"error": str(e)}), file=sys.stderr, flush=True)
+            # Errors during the loop (e.g., GPU reset)
+            print(
+                json.dumps({"error": f"Metric collection failed: {str(e)}"}),
+                file=sys.stderr,
+                flush=True,
+            )
+            # We can try to re-initialize or just wait
+            time.sleep(5)
 
         time.sleep(POLL_INTERVAL)
 
-    # Cleanup
-    pynvml.nvmlShutdown()
+    # Cleanup (this part is unlikely to be reached in the current structure)
+    try:
+        pynvml.nvmlShutdown()
+    except:
+        pass
 
 
 if __name__ == "__main__":

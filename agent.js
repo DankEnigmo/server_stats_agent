@@ -21,10 +21,55 @@ app.get("/", (req, res) => {
   res.send("Agent is running.");
 });
 
+// --- Static Info Store ---
+let staticInfo = {
+  cpu: {},
+  os: {},
+  mem: {},
+  gpus: [],
+};
 let latestGPUData = [];
 let lastGPUUpdate = Date.now();
+let gpuStaticInfoReceived = false;
 
-// Start Python GPU fetcher process with proper error handling
+// --- Collect static system information once at startup ---
+const gatherStaticInfo = async () => {
+  try {
+    const [cpu, os, mem] = await Promise.all([
+      si.cpu(),
+      si.osInfo(),
+      si.memLayout(),
+    ]);
+    staticInfo.cpu = {
+      manufacturer: cpu.manufacturer,
+      brand: cpu.brand,
+      speed: cpu.speed,
+      cores: cpu.cores,
+      physicalCores: cpu.physicalCores,
+    };
+    staticInfo.os = {
+      platform: os.platform,
+      distro: os.distro,
+      release: os.release,
+      arch: os.arch,
+    };
+    staticInfo.mem = {
+      total: mem.reduce((sum, bank) => sum + bank.size, 0),
+      layout: mem.map((bank) => ({
+        size: bank.size,
+        type: bank.type,
+        clockSpeed: bank.clockSpeed,
+      })),
+    };
+    console.log("Static system info collected.");
+  } catch (e) {
+    console.error("Failed to collect static system info:", e);
+  }
+};
+
+gatherStaticInfo();
+
+// --- Python GPU Fetcher Process ---
 const pythonProcess = spawn("python", ["gpu_fetcher.py"], {
   cwd: __dirname,
   stdio: ["pipe", "pipe", "pipe"],
@@ -39,27 +84,30 @@ pythonProcess.stdout.on("data", (data) => {
     try {
       const parsed = JSON.parse(line);
 
-      // Handle status messages
-      if (parsed.status) {
-        if (parsed.status === "ready") {
-          console.log("GPU Fetcher: ready - GPU monitoring active");
-        } else if (parsed.status === "ready_no_gpu") {
+      // First message from Python script is the static GPU info
+      if (parsed.status && !gpuStaticInfoReceived) {
+        if (parsed.status === "ready" || parsed.status === "ready_no_gpu") {
           console.log(
-            "GPU Fetcher: ready - No GPU detected (continuing without GPU metrics)",
+            `GPU Fetcher: ${parsed.status} - ${parsed.gpus.length} GPUs detected.`,
           );
-        } else {
-          console.log(`GPU Fetcher: ${parsed.status}`);
+          staticInfo.gpus = parsed.gpus; // Store static GPU info
+          gpuStaticInfoReceived = true;
         }
         return;
       }
 
-      // Update GPU data (array of GPUs or empty array)
+      // Subsequent messages are arrays of dynamic GPU metrics
       if (Array.isArray(parsed)) {
         latestGPUData = parsed;
         lastGPUUpdate = Date.now();
       }
     } catch (e) {
-      console.error("Failed to parse GPU data:", e.message, "- Raw:", line);
+      console.error(
+        "Failed to parse data from Python:",
+        e.message,
+        "- Raw:",
+        line,
+      );
     }
   });
 });
@@ -84,23 +132,23 @@ pythonProcess.on("error", (err) => {
 
 pythonProcess.on("exit", (code) => {
   if (code !== 0) {
-    console.error(`GPU fetcher exited with code ${code} - Restarting...`);
-
-    setTimeout(() => {
-      console.log("Attempting to restart GPU fetcher...");
-    }, 5000);
+    console.error(`GPU fetcher exited with code ${code}.`);
   }
 });
 
 // Monitor GPU data staleness
 setInterval(() => {
-  if (Date.now() - lastGPUUpdate > 5000) {
+  if (gpuStaticInfoReceived && Date.now() - lastGPUUpdate > 5000) {
     console.warn("GPU data not updating - Python process may be hung");
   }
 }, 5000);
 
+// --- Socket.io Connection Handling ---
 io.on("connection", (socket) => {
   console.log(`Dashboard connected: ${socket.id}`);
+
+  // Send the collected static info to the newly connected client
+  socket.emit("static-info", staticInfo);
 
   socket.on("ping_request", () => {
     socket.emit("pong_response", { time: Date.now() });
@@ -118,21 +166,23 @@ io.on("connection", (socket) => {
         ts: Date.now(),
         cpu: {
           percent: Number(cpu.currentLoad).toFixed(2),
-          temperature: temp.main ?? null, // Use nullish coalescing for safety
+          // Adding per-core load
+          cores: cpu.cpus.map((c) => Number(c.load).toFixed(2)),
+          temperature: temp.main ?? null,
         },
         ram: {
-          percent: Number(((mem.active / mem.total) * 100).toFixed(2)),
-          used: Number((mem.active / 1024 ** 3).toFixed(2)),
+          percent: Number(((mem.used / mem.total) * 100).toFixed(2)), // Changed to mem.used
+          used: Number((mem.used / 1024 ** 3).toFixed(2)),
           total: Number((mem.total / 1024 ** 3).toFixed(2)),
         },
-        gpu: [...latestGPUData],
+        gpu: latestGPUData, // Send dynamic data, frontend can map it to static
       };
 
       socket.volatile.emit("metrics", payload);
     } catch (err) {
-      console.error(err);
+      console.error("Metric collection error:", err);
     }
-  }, 250);
+  }, 250); // High frequency for dynamic data
 
   socket.on("disconnect", () => {
     clearInterval(intervalId);
