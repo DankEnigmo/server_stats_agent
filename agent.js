@@ -108,12 +108,18 @@ io.on("connection", (socket) => {
 
   const intervalId = setInterval(async () => {
     try {
-      const cpu = await si.currentLoad();
-      const mem = await si.mem();
+      const [cpu, mem, temp] = await Promise.all([
+        si.currentLoad(),
+        si.mem(),
+        si.cpuTemperature(),
+      ]);
 
       const payload = {
         ts: Date.now(),
-        cpu: { percent: Number(cpu.currentLoad).toFixed(2) },
+        cpu: {
+          percent: Number(cpu.currentLoad).toFixed(2),
+          temperature: temp.main ?? null, // Use nullish coalescing for safety
+        },
         ram: {
           percent: Number(((mem.active / mem.total) * 100).toFixed(2)),
           used: Number((mem.active / 1024 ** 3).toFixed(2)),
