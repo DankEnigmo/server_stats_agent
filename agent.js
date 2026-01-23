@@ -43,9 +43,9 @@ const gatherStaticInfo = async () => {
     staticInfo.cpu = {
       manufacturer: cpu.manufacturer,
       brand: cpu.brand,
-      speed: cpu.speed,
-      cores: cpu.cores,
-      physicalCores: cpu.physicalCores,
+      speed: Number(cpu.speed) || 0,
+      cores: Number(cpu.cores) || 0,
+      physicalCores: Number(cpu.physicalCores) || 0,
     };
     staticInfo.os = {
       platform: os.platform,
@@ -54,7 +54,7 @@ const gatherStaticInfo = async () => {
       arch: os.arch,
     };
     staticInfo.mem = {
-      total: mem.reduce((sum, bank) => sum + bank.size, 0),
+      total: os.totalmem,
       layout: mem.map((bank) => ({
         size: bank.size,
         type: bank.type,

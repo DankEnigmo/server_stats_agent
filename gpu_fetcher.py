@@ -96,7 +96,7 @@ def get_GPU_data():
 
                 dynamic_metrics.append(
                     {
-                        "id": i,  # ID to link with static info
+                        "id": int(i),  # ID to link with static info
                         "load": round(utilization.gpu / 100.0, 3),  # 0-1 range
                         "memoryUtil": round(
                             mem_info.used / mem_info.total, 3
