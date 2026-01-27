@@ -27,6 +27,7 @@ let staticInfo = {
   os: {},
   mem: {},
   gpus: [],
+  storage: [],
 };
 let latestGPUData = [];
 let lastGPUUpdate = Date.now();
@@ -35,10 +36,11 @@ let gpuStaticInfoReceived = false;
 // --- Collect static system information once at startup ---
 const gatherStaticInfo = async () => {
   try {
-    const [cpu, os, mem] = await Promise.all([
+    const [cpu, os, mem, fs] = await Promise.all([
       si.cpu(),
       si.osInfo(),
       si.memLayout(),
+      si.fsSize(),
     ]);
     staticInfo.cpu = {
       manufacturer: cpu.manufacturer,
@@ -61,6 +63,12 @@ const gatherStaticInfo = async () => {
         clockSpeed: bank.clockSpeed,
       })),
     };
+    staticInfo.storage = fs.map(f => ({
+      name: f.fs,
+      type: f.type,
+      total: f.size,
+      used: f.used,
+    }));
     console.log("Static system info collected.");
   } catch (e) {
     console.error("Failed to collect static system info:", e);
