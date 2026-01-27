@@ -42,6 +42,9 @@ const gatherStaticInfo = async () => {
       si.memLayout(),
       si.fsSize(),
     ]);
+
+    console.log("Raw OS Info:", os); // Log the entire os object
+
     staticInfo.cpu = {
       manufacturer: cpu.manufacturer,
       brand: cpu.brand,
@@ -55,14 +58,22 @@ const gatherStaticInfo = async () => {
       release: os.release,
       arch: os.arch,
     };
-    staticInfo.mem = {
-      total: os.totalmem,
-      layout: mem.map((bank) => ({
-        size: bank.size,
-        type: bank.type,
-        clockSpeed: bank.clockSpeed,
-      })),
-    };
+
+    // Validate and set memory info
+    if (os && typeof os.totalmem === 'number' && os.totalmem > 0) {
+      staticInfo.mem = {
+        total: os.totalmem,
+        layout: mem.map((bank) => ({
+          size: bank.size,
+          type: bank.type,
+          clockSpeed: bank.clockSpeed,
+        })),
+      };
+    } else {
+      console.error("Could not retrieve valid total memory from os.totalmem. Value was:", os.totalmem);
+      staticInfo.mem = { total: 0, layout: [] }; // Set a default/fallback
+    }
+    
     staticInfo.storage = fs
       .filter(f => !['tmpfs', 'devtmpfs', 'overlay', 'squashfs', 'efivarfs'].includes(f.type) && f.size > 0)
       .map(f => ({
