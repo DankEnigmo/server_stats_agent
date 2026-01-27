@@ -60,9 +60,9 @@ const gatherStaticInfo = async () => {
     };
 
     // Validate and set memory info
-    if (os && typeof os.totalmem === 'number' && os.totalmem > 0) {
+    if (os && typeof si.mem() === 'number' && si.mem() > 0) {
       staticInfo.mem = {
-        total: os.totalmem,
+        total: si.mem(),
         layout: mem.map((bank) => ({
           size: bank.size,
           type: bank.type,
@@ -70,7 +70,7 @@ const gatherStaticInfo = async () => {
         })),
       };
     } else {
-      console.error("Could not retrieve valid total memory from os.totalmem. Value was:", os.totalmem);
+      console.error("Could not retrieve valid total memory from si.mem(). Value was:", si.mem());
       staticInfo.mem = { total: 0, layout: [] }; // Set a default/fallback
     }
     
