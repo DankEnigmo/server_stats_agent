@@ -63,12 +63,14 @@ const gatherStaticInfo = async () => {
         clockSpeed: bank.clockSpeed,
       })),
     };
-    staticInfo.storage = fs.map(f => ({
-      name: f.fs,
-      type: f.type,
-      total: f.size,
-      used: f.used,
-    }));
+    staticInfo.storage = fs
+      .filter(f => !['tmpfs', 'devtmpfs', 'overlay', 'squashfs', 'efivarfs'].includes(f.type) && f.size > 0)
+      .map(f => ({
+        name: f.fs,
+        type: f.type,
+        total: f.size,
+        used: f.used,
+      }));
     console.log("Static system info collected.");
   } catch (e) {
     console.error("Failed to collect static system info:", e);
