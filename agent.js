@@ -40,6 +40,7 @@ const gatherStaticInfo = async () => {
       si.cpu(),
       si.osInfo(),
       si.memLayout(),
+      si.mem(),
       si.fsSize(),
     ]);
 
@@ -62,7 +63,7 @@ const gatherStaticInfo = async () => {
     // Validate and set memory info
     if (os && typeof si.mem() === 'number' && si.mem() > 0) {
       staticInfo.mem = {
-        total: si.mem(),
+        total: memInfo.total(),
         layout: mem.map((bank) => ({
           size: bank.size,
           type: bank.type,
