@@ -78,7 +78,7 @@ const gatherStaticInfo = async () => {
 gatherStaticInfo();
 
 // --- Python GPU Fetcher Process ---
-const pythonProcess = spawn("python", ["gpu_fetcher.py"], {
+const pythonProcess = spawn("./metricVenv/bin/python", ["gpu_fetcher.py"], {
   cwd: __dirname,
   stdio: ["pipe", "pipe", "pipe"],
 });
