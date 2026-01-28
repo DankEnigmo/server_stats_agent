@@ -3,6 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const si = require("systeminformation");
 const { spawn } = require("child_process");
+const { Worker } = require('worker_threads');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +16,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+
 
 // Add a simple HTTP endpoint to verify server is running
 app.get("/", (req, res) => {
@@ -182,27 +184,42 @@ io.on("connection", (socket) => {
     socket.emit("pong_response", { time: Date.now() });
   });
 
+  // Cache for process data to reduce CPU-intensive calls
+  let cachedProcessData = [];
+  let lastProcessUpdate = 0;
+  const PROCESS_UPDATE_INTERVAL = 2000; // Update process data every 2 seconds instead of every 250ms
+
   const intervalId = setInterval(async () => {
     try {
-      const [cpu, mem, temp, procs] = await Promise.all([
+      // Collect basic metrics (CPU, RAM, temp) every 250ms
+      const [cpu, mem, temp] = await Promise.all([
         si.currentLoad(),
         si.mem(),
-        si.cpuTemperature(),
-        si.processes(), // Fetch process data
+        si.cpuTemperature()
       ]);
 
-      // Process and filter top services
-      const numCores = cpu.cpus.length > 0 ? cpu.cpus.length : 1;
-      const topProcesses = procs.list
-        .sort((a, b) => b.cpu - a.cpu) // Sort by CPU usage (descending)
-        .slice(0, 10) 
-        .map((p) => ({
-          pid: p.pid,
-          name: p.name,
-          cpu: Number((p.cpu / numCores).toFixed(2)), // Normalize CPU %
-          mem: Number((p.memRss / (1024 * 1024)).toFixed(2)), // Convert to MB
-          command: p.command,
-        }));
+      // Update process data only when needed using worker thread
+      const now = Date.now();
+      if (now - lastProcessUpdate > PROCESS_UPDATE_INTERVAL) {
+        // Create a worker thread to collect process data without blocking the main thread
+        const worker = new Worker('./process-worker.js');
+
+        worker.on('message', (result) => {
+          cachedProcessData = result;
+          lastProcessUpdate = now;
+        });
+
+        worker.on('error', (error) => {
+          console.error('Process worker error:', error);
+        });
+
+        // Ensure worker is terminated after processing
+        worker.on('exit', (code) => {
+          if (code !== 0) {
+            console.error(`Process worker exited with code ${code}`);
+          }
+        });
+      }
 
       const payload = {
         ts: Date.now(),
@@ -220,7 +237,7 @@ io.on("connection", (socket) => {
           total: Number((mem.total / 1024 ** 3).toFixed(2)),
         },
         gpu: latestGPUData,
-        processes: topProcesses,
+        processes: cachedProcessData,
       };
 
       socket.volatile.emit("metrics", payload);
