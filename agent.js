@@ -36,7 +36,7 @@ let gpuStaticInfoReceived = false;
 // --- Collect static system information once at startup ---
 const gatherStaticInfo = async () => {
   try {
-    const [cpu, os, mem, fs] = await Promise.all([
+    const [cpu, os, memLayout, memInfo, fs] = await Promise.all([
       si.cpu(),
       si.osInfo(),
       si.memLayout(),
@@ -44,7 +44,8 @@ const gatherStaticInfo = async () => {
       si.fsSize(),
     ]);
 
-    console.log("Raw OS Info:", os); // Log the entire os object
+    console.log("Raw OS Info:", os);
+    console.log("Memory Info:", memInfo);
 
     staticInfo.cpu = {
       manufacturer: cpu.manufacturer,
@@ -60,30 +61,35 @@ const gatherStaticInfo = async () => {
       arch: os.arch,
     };
 
-    // Validate and set memory info
-    if (os && typeof si.mem() === 'number' && si.mem() > 0) {
-      staticInfo.mem = {
-        total: memInfo.total(),
-        layout: mem.map((bank) => ({
-          size: bank.size,
-          type: bank.type,
-          clockSpeed: bank.clockSpeed,
-        })),
-      };
-    } else {
-      console.error("Could not retrieve valid total memory from si.mem(). Value was:", si.mem());
-      staticInfo.mem = { total: 0, layout: [] }; // Set a default/fallback
-    }
-    
+    // Set memory info using the awaited memInfo result
+    staticInfo.mem = {
+      total: memInfo.total,
+      layout: memLayout.map((bank) => ({
+        size: bank.size,
+        type: bank.type,
+        clockSpeed: bank.clockSpeed,
+      })),
+    };
+
     staticInfo.storage = fs
-      .filter(f => !['tmpfs', 'devtmpfs', 'overlay', 'squashfs', 'efivarfs'].includes(f.type) && f.size > 0)
-      .map(f => ({
+      .filter(
+        (f) =>
+          !["tmpfs", "devtmpfs", "overlay", "squashfs", "efivarfs"].includes(
+            f.type,
+          ) && f.size > 0,
+      )
+      .map((f) => ({
         name: f.fs,
         type: f.type,
         total: f.size,
         used: f.used,
       }));
     console.log("Static system info collected.");
+    console.log(
+      "Total RAM:",
+      (staticInfo.mem.total / 1024 ** 3).toFixed(2),
+      "GB",
+    );
   } catch (e) {
     console.error("Failed to collect static system info:", e);
   }

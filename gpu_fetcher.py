@@ -117,16 +117,15 @@ def get_GPU_data():
                 flush=True,
             )
             # We can try to re-initialize or just wait
-            time.sleep(5)
+            time.sleep(2)
 
         time.sleep(POLL_INTERVAL)
 
     # Cleanup (this part is unlikely to be reached in the current structure)
     try:
         pynvml.nvmlShutdown()
-    except:
-        pass
-
+    except Exception as e:
+        print(f"Error during cleanup: {str(e)}", file=sys.stderr)
 
 if __name__ == "__main__":
     # Register signal handlers for graceful shutdown
