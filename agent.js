@@ -199,8 +199,10 @@ io.on("connection", (socket) => {
           temperature: temp.main ?? null,
         },
         ram: {
-          percent: Number(((mem.used / mem.total) * 100).toFixed(2)), // Changed to mem.used
-          used: Number((mem.used / 1024 ** 3).toFixed(2)),
+          percent: Number(
+            (((mem.total - mem.available) / mem.total) * 100).toFixed(2),
+          ),
+          used: Number(((mem.total - mem.available) / 1024 ** 3).toFixed(2)),
           total: Number((mem.total / 1024 ** 3).toFixed(2)),
         },
         gpu: latestGPUData, // Send dynamic data, frontend can map it to static
