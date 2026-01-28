@@ -184,11 +184,24 @@ io.on("connection", (socket) => {
 
   const intervalId = setInterval(async () => {
     try {
-      const [cpu, mem, temp] = await Promise.all([
+      const [cpu, mem, temp, procs] = await Promise.all([
         si.currentLoad(),
         si.mem(),
         si.cpuTemperature(),
+        si.processes(), // Fetch process data
       ]);
+
+      // Process and filter top services
+      const topProcesses = procs.list
+        .sort((a, b) => b.cpu - a.cpu) // Sort by CPU usage (descending)
+        .slice(0, 10) 
+        .map((p) => ({
+          pid: p.pid,
+          name: p.name,
+          cpu: Number(p.cpu.toFixed(2)),
+          mem: Number((p.memRss / (1024 * 1024)).toFixed(2)), // Convert to MB
+          command: p.command,
+        }));
 
       const payload = {
         ts: Date.now(),
@@ -205,7 +218,8 @@ io.on("connection", (socket) => {
           used: Number(((mem.total - mem.available) / 1024 ** 3).toFixed(2)),
           total: Number((mem.total / 1024 ** 3).toFixed(2)),
         },
-        gpu: latestGPUData, // Send dynamic data, frontend can map it to static
+        gpu: latestGPUData,
+        processes: topProcesses,
       };
 
       socket.volatile.emit("metrics", payload);
