@@ -192,13 +192,14 @@ io.on("connection", (socket) => {
       ]);
 
       // Process and filter top services
+      const numCores = cpu.cpus.length > 0 ? cpu.cpus.length : 1;
       const topProcesses = procs.list
         .sort((a, b) => b.cpu - a.cpu) // Sort by CPU usage (descending)
         .slice(0, 10) 
         .map((p) => ({
           pid: p.pid,
           name: p.name,
-          cpu: Number(p.cpu.toFixed(2)),
+          cpu: Number((p.cpu / numCores).toFixed(2)), // Normalize CPU %
           mem: Number((p.memRss / (1024 * 1024)).toFixed(2)), // Convert to MB
           command: p.command,
         }));
