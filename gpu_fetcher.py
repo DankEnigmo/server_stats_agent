@@ -55,7 +55,11 @@ def get_GPU_data():
             )
 
         # Send one-time static info payload
-        print(json.dumps({"status": "ready", "gpus": static_gpu_info}), flush=True)
+        print(
+            json.dumps({"type": "status", "status": "ready", "gpus": static_gpu_info}),
+            flush=True,
+        )
+
         time.sleep(0.1)  # Brief pause to ensure agent processes this message
 
     except pynvml.NVMLError_LibraryNotFound:
@@ -96,16 +100,15 @@ def get_GPU_data():
 
                 dynamic_metrics.append(
                     {
-                        "id": int(i),  
-                        "load": round(utilization.gpu / 100.0, 3),  
-                        "memoryUtil": round(
-                            mem_info.used / mem_info.total, 3
-                        ),  
-                        "memoryUsed": round(mem_info.used / (1024**2), 2), 
+                        "id": int(i),
+                        "load": round(utilization.gpu / 100.0, 3),
+                        "memoryUtil": round(mem_info.used / mem_info.total, 3),
+                        "memoryUsed": round(mem_info.used / (1024**2), 2),
+                        "temperature": int(temp),
                     }
                 )
 
-            print(json.dumps(dynamic_metrics), flush=True)
+            print(json.dumps({"type": "metrics", "gpus": dynamic_metrics}), flush=True)
 
         except Exception as e:
             print(
