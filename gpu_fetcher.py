@@ -96,32 +96,27 @@ def get_GPU_data():
 
                 dynamic_metrics.append(
                     {
-                        "id": int(i),  # ID to link with static info
-                        "load": round(utilization.gpu / 100.0, 3),  # 0-1 range
+                        "id": int(i),  
+                        "load": round(utilization.gpu / 100.0, 3),  
                         "memoryUtil": round(
                             mem_info.used / mem_info.total, 3
-                        ),  # 0-1 range
-                        "memoryUsed": round(mem_info.used / (1024**2), 2),  # MB
-                        "temperature": round(temp, 1),
+                        ),  
+                        "memoryUsed": round(mem_info.used / (1024**2), 2), 
                     }
                 )
 
-            # Print the list of dynamic metrics
             print(json.dumps(dynamic_metrics), flush=True)
 
         except Exception as e:
-            # Errors during the loop (e.g., GPU reset)
             print(
                 json.dumps({"error": f"Metric collection failed: {str(e)}"}),
                 file=sys.stderr,
                 flush=True,
             )
-            # We can try to re-initialize or just wait
             time.sleep(2)
 
         time.sleep(POLL_INTERVAL)
 
-    # Cleanup (this part is unlikely to be reached in the current structure)
     try:
         pynvml.nvmlShutdown()
     except Exception as e:

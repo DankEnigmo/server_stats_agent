@@ -45,9 +45,6 @@ const gatherStaticInfo = async () => {
       si.fsSize(),
     ]);
 
-    console.log("Raw OS Info:", os);
-    console.log("Memory Info:", memInfo);
-
     staticInfo.cpu = {
       manufacturer: cpu.manufacturer,
       brand: cpu.brand,
@@ -85,12 +82,6 @@ const gatherStaticInfo = async () => {
         total: f.size,
         used: f.used,
       }));
-    console.log("Static system info collected.");
-    console.log(
-      "Total RAM:",
-      (staticInfo.mem.total / 1024 ** 3).toFixed(2),
-      "GB",
-    );
   } catch (e) {
     console.error("Failed to collect static system info:", e);
   }
@@ -116,9 +107,6 @@ pythonProcess.stdout.on("data", (data) => {
       // First message from Python script is the static GPU info
       if (parsed.status && !gpuStaticInfoReceived) {
         if (parsed.status === "ready" || parsed.status === "ready_no_gpu") {
-          console.log(
-            `GPU Fetcher: ${parsed.status} - ${parsed.gpus.length} GPUs detected.`,
-          );
           staticInfo.gpus = parsed.gpus; // Store static GPU info
           gpuStaticInfoReceived = true;
         }
@@ -165,13 +153,6 @@ pythonProcess.on("exit", (code) => {
   }
 });
 
-// Monitor GPU data staleness
-setInterval(() => {
-  if (gpuStaticInfoReceived && Date.now() - lastGPUUpdate > 5000) {
-    console.warn("GPU data not updating - Python process may be hung");
-  }
-}, 5000);
-
 // Global variables for process monitoring
 let cachedProcessData = [];
 let lastProcessUpdate = 0;
@@ -180,18 +161,18 @@ const PROCESS_UPDATE_INTERVAL = 5000; // Update process data every 5 seconds
 // Function to get process data on demand
 const getProcessData = () => {
   return new Promise((resolve, reject) => {
-    const worker = new Worker('./process-worker.js');
+    const worker = new Worker("./process-worker.js");
 
-    worker.on('message', (result) => {
+    worker.on("message", (result) => {
       resolve(result);
     });
 
-    worker.on('error', (error) => {
-      console.error('Process worker error:', error);
+    worker.on("error", (error) => {
+      console.error("Process worker error:", error);
       reject(error);
     });
 
-    worker.on('exit', (code) => {
+    worker.on("exit", (code) => {
       if (code !== 0) {
         console.error(`Process worker exited with code ${code}`);
       }
@@ -236,7 +217,7 @@ io.on("connection", (socket) => {
           cachedProcessData = processData;
           lastProcessUpdate = now;
         } catch (error) {
-          console.error('Error getting process data:', error);
+          console.error("Error getting process data:", error);
         }
       }
 
@@ -258,7 +239,7 @@ io.on("connection", (socket) => {
         processes: cachedProcessData,
       };
 
-      socket.volatile.emit("metrics", payload);
+      socket.emit("metrics", payload);
     } catch (err) {
       console.error("Metric collection error:", err);
     }
@@ -278,11 +259,6 @@ server.listen(PORT, () => {
 // Graceful shutdown
 const cleanup = () => {
   console.log("\nShutting down gracefully...");
-  // Terminate the process worker
-  if (processWorker) {
-    processWorker.postMessage("STOP");
-    processWorker = null;
-  }
   pythonProcess.kill("SIGINT");
   io.close(() => {
     console.log("Server closed");
