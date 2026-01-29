@@ -25,34 +25,15 @@ const getTopProcesses = async () => {
   }
 };
 
-// Continuous process monitoring
-const PROCESS_UPDATE_INTERVAL = 5000; // 5 seconds
-
-const sendProcessUpdate = async () => {
-  try {
-    const topProcesses = await getTopProcesses();
-    parentPort.postMessage(topProcesses);
-  } catch (error) {
-    console.error("Error sending process update:", error);
+// Execute the function and send result back to main thread
+getTopProcesses()
+  .then(result => {
+    parentPort.postMessage(result);
+  })
+  .catch(error => {
+    console.error('Worker error:', error);
     parentPort.postMessage([]);
-  }
-};
+  });
 
-// Send initial update
-sendProcessUpdate();
-
-// Set up interval to send updates
-const intervalId = setInterval(sendProcessUpdate, PROCESS_UPDATE_INTERVAL);
-
-// Listen for messages from the main thread
-parentPort.on("message", (message) => {
-  if (message === "STOP") {
-    clearInterval(intervalId);
-    parentPort.close();
-  }
-});
-
-// Handle worker exit
-parentPort.on("close", () => {
-  clearInterval(intervalId);
-});
+// Exit the worker after sending the result
+process.exit(0);

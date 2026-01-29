@@ -3,7 +3,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const si = require("systeminformation");
 const { spawn } = require("child_process");
-const { Worker } = require('worker_threads');
+const { Worker } = require("worker_threads");
 
 const app = express();
 const server = http.createServer(app);
@@ -16,7 +16,6 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
-
 
 // Add a simple HTTP endpoint to verify server is running
 app.get("/", (req, res) => {
@@ -173,41 +172,32 @@ setInterval(() => {
   }
 }, 5000);
 
-// Global persistent worker for process monitoring
-let processWorker = null;
+// Global variables for process monitoring
 let cachedProcessData = [];
+let lastProcessUpdate = 0;
+const PROCESS_UPDATE_INTERVAL = 5000; // Update process data every 5 seconds
 
-// Initialize the persistent process worker
-const initializeProcessWorker = () => {
-  if (processWorker) {
-    // If a worker already exists, terminate it
-    processWorker.postMessage('STOP');
-    processWorker = null;
-  }
+// Function to get process data on demand
+const getProcessData = () => {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./process-worker.js');
 
-  processWorker = new Worker('./process-worker.js');
+    worker.on('message', (result) => {
+      resolve(result);
+    });
 
-  processWorker.on('message', (result) => {
-    // Update the cached process data when new data arrives
-    cachedProcessData = result;
-  });
+    worker.on('error', (error) => {
+      console.error('Process worker error:', error);
+      reject(error);
+    });
 
-  processWorker.on('error', (error) => {
-    console.error('Process worker error:', error);
-  });
-
-  processWorker.on('exit', (code) => {
-    console.log(`Process worker exited with code ${code}`);
-    if (code !== 0) {
-      console.log('Restarting process worker...');
-      // Restart the worker after a short delay
-      setTimeout(initializeProcessWorker, 1000);
-    }
+    worker.on('exit', (code) => {
+      if (code !== 0) {
+        console.error(`Process worker exited with code ${code}`);
+      }
+    });
   });
 };
-
-// Initialize the process worker when the server starts
-initializeProcessWorker();
 
 // --- Socket.io Connection Handling ---
 io.on("connection", (socket) => {
@@ -229,10 +219,7 @@ io.on("connection", (socket) => {
   const intervalId = setInterval(async () => {
     try {
       // Collect critical metrics (CPU and RAM) every 1000ms
-      const [cpu, mem] = await Promise.all([
-        si.currentLoad(),
-        si.mem()
-      ]);
+      const [cpu, mem] = await Promise.all([si.currentLoad(), si.mem()]);
 
       // Update temperature data less frequently
       const now = Date.now();
@@ -240,6 +227,17 @@ io.on("connection", (socket) => {
         const temp = await si.cpuTemperature();
         cachedTempData = temp;
         lastTempUpdate = now;
+      }
+
+      // Update process data only when needed
+      if (now - lastProcessUpdate > PROCESS_UPDATE_INTERVAL) {
+        try {
+          const processData = await getProcessData();
+          cachedProcessData = processData;
+          lastProcessUpdate = now;
+        } catch (error) {
+          console.error('Error getting process data:', error);
+        }
       }
 
       const payload = {
@@ -282,7 +280,7 @@ const cleanup = () => {
   console.log("\nShutting down gracefully...");
   // Terminate the process worker
   if (processWorker) {
-    processWorker.postMessage('STOP');
+    processWorker.postMessage("STOP");
     processWorker = null;
   }
   pythonProcess.kill("SIGINT");
