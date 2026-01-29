@@ -173,6 +173,42 @@ setInterval(() => {
   }
 }, 5000);
 
+// Global persistent worker for process monitoring
+let processWorker = null;
+let cachedProcessData = [];
+
+// Initialize the persistent process worker
+const initializeProcessWorker = () => {
+  if (processWorker) {
+    // If a worker already exists, terminate it
+    processWorker.postMessage('STOP');
+    processWorker = null;
+  }
+
+  processWorker = new Worker('./process-worker.js');
+
+  processWorker.on('message', (result) => {
+    // Update the cached process data when new data arrives
+    cachedProcessData = result;
+  });
+
+  processWorker.on('error', (error) => {
+    console.error('Process worker error:', error);
+  });
+
+  processWorker.on('exit', (code) => {
+    console.log(`Process worker exited with code ${code}`);
+    if (code !== 0) {
+      console.log('Restarting process worker...');
+      // Restart the worker after a short delay
+      setTimeout(initializeProcessWorker, 1000);
+    }
+  });
+};
+
+// Initialize the process worker when the server starts
+initializeProcessWorker();
+
 // --- Socket.io Connection Handling ---
 io.on("connection", (socket) => {
   console.log(`Dashboard connected: ${socket.id}`);
@@ -184,50 +220,34 @@ io.on("connection", (socket) => {
     socket.emit("pong_response", { time: Date.now() });
   });
 
-  // Cache for process data to reduce CPU-intensive calls
-  let cachedProcessData = [];
-  let lastProcessUpdate = 0;
-  const PROCESS_UPDATE_INTERVAL = 2000; // Update process data every 2 seconds instead of every 250ms
+  // Cache for temperature data to reduce polling frequency
+  let cachedTempData = null;
+  let lastTempUpdate = 0;
+  const TEMP_UPDATE_INTERVAL = 2000; // Update temperature every 2 seconds
 
+  // Main metrics collection (CPU and RAM) every 1000ms
   const intervalId = setInterval(async () => {
     try {
-      // Collect basic metrics (CPU, RAM, temp) every 250ms
-      const [cpu, mem, temp] = await Promise.all([
+      // Collect critical metrics (CPU and RAM) every 1000ms
+      const [cpu, mem] = await Promise.all([
         si.currentLoad(),
-        si.mem(),
-        si.cpuTemperature()
+        si.mem()
       ]);
 
-      // Update process data only when needed using worker thread
+      // Update temperature data less frequently
       const now = Date.now();
-      if (now - lastProcessUpdate > PROCESS_UPDATE_INTERVAL) {
-        // Create a worker thread to collect process data without blocking the main thread
-        const worker = new Worker('./process-worker.js');
-
-        worker.on('message', (result) => {
-          cachedProcessData = result;
-          lastProcessUpdate = now;
-        });
-
-        worker.on('error', (error) => {
-          console.error('Process worker error:', error);
-        });
-
-        // Ensure worker is terminated after processing
-        worker.on('exit', (code) => {
-          if (code !== 0) {
-            console.error(`Process worker exited with code ${code}`);
-          }
-        });
+      if (now - lastTempUpdate > TEMP_UPDATE_INTERVAL) {
+        const temp = await si.cpuTemperature();
+        cachedTempData = temp;
+        lastTempUpdate = now;
       }
 
       const payload = {
         ts: Date.now(),
         cpu: {
           percent: Number(cpu.currentLoad).toFixed(2),
-          // Adding per-core load
-          cores: cpu.cpus.map((c) => Number(c.load).toFixed(2)),
-          temperature: temp.main ?? null,
+          // Removed per-core load data to reduce CPU usage
+          temperature: cachedTempData?.main ?? null,
         },
         ram: {
           percent: Number(
@@ -244,7 +264,7 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("Metric collection error:", err);
     }
-  }, 250); // High frequency for dynamic data
+  }, 1000); // Changed from 250ms to 1000ms for critical metrics
 
   socket.on("disconnect", () => {
     clearInterval(intervalId);
@@ -260,6 +280,11 @@ server.listen(PORT, () => {
 // Graceful shutdown
 const cleanup = () => {
   console.log("\nShutting down gracefully...");
+  // Terminate the process worker
+  if (processWorker) {
+    processWorker.postMessage('STOP');
+    processWorker = null;
+  }
   pythonProcess.kill("SIGINT");
   io.close(() => {
     console.log("Server closed");
