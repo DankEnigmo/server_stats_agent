@@ -200,7 +200,6 @@ io.on("connection", (socket) => {
 
   const intervalId = setInterval(async () => {
     try {
-      // Collect basic metrics (CPU, RAM, temp) every 250ms
       const [cpu, mem, temp] = await Promise.all([
         si.currentLoad(),
         si.mem(),
@@ -238,7 +237,7 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("Metric collection error:", err);
     }
-  }, 250); // High frequency for dynamic data
+  }, 1000); 
 
   socket.on("disconnect", () => {
     clearInterval(intervalId);
