@@ -105,7 +105,7 @@ pythonProcess.stdout.on("data", (data) => {
       const parsed = JSON.parse(line);
 
       // First message from Python script is the static GPU info
-      if (parsed.status && !gpuStaticInfoReceived) {
+      if (parsed.type === "status" && !gpuStaticInfoReceived) {
         if (parsed.status === "ready" || parsed.status === "ready_no_gpu") {
           staticInfo.gpus = parsed.gpus; // Store static GPU info
           gpuStaticInfoReceived = true;
@@ -113,9 +113,9 @@ pythonProcess.stdout.on("data", (data) => {
         return;
       }
 
-      // Subsequent messages are arrays of dynamic GPU metrics
-      if (Array.isArray(parsed)) {
-        latestGPUData = parsed;
+      // Subsequent messages are dynamic GPU metrics
+      if (parsed.type === "metrics") {
+        latestGPUData = parsed.gpus;
         lastGPUUpdate = Date.now();
       }
     } catch (e) {
@@ -153,14 +153,13 @@ pythonProcess.on("exit", (code) => {
   }
 });
 
-<<<<<<< HEAD
 // Monitor GPU data staleness
 setInterval(() => {
   if (gpuStaticInfoReceived && Date.now() - lastGPUUpdate > 5000) {
     console.warn("GPU data not updating - Python process may be hung");
   }
 }, 5000);
-=======
+
 // Global variables for process monitoring
 let cachedProcessData = [];
 let lastProcessUpdate = 0;
@@ -187,7 +186,6 @@ const getProcessData = () => {
     });
   });
 };
->>>>>>> 69d4cfeb7e8a4faf23328250e051255208b8f048
 
 // --- Socket.io Connection Handling ---
 io.on("connection", (socket) => {
@@ -200,49 +198,17 @@ io.on("connection", (socket) => {
     socket.emit("pong_response", { time: Date.now() });
   });
 
-  // Cache for process data to reduce CPU-intensive calls
-  let cachedProcessData = [];
-  let lastProcessUpdate = 0;
-  const PROCESS_UPDATE_INTERVAL = 2000; // Update process data every 2 seconds instead of every 250ms
-
   const intervalId = setInterval(async () => {
     try {
-<<<<<<< HEAD
       // Collect basic metrics (CPU, RAM, temp) every 250ms
       const [cpu, mem, temp] = await Promise.all([
         si.currentLoad(),
         si.mem(),
         si.cpuTemperature()
       ]);
-=======
-      // Collect critical metrics (CPU and RAM) every 1000ms
-      const [cpu, mem] = await Promise.all([si.currentLoad(), si.mem()]);
->>>>>>> 69d4cfeb7e8a4faf23328250e051255208b8f048
-
-      // Update process data only when needed using worker thread
-      const now = Date.now();
-      if (now - lastProcessUpdate > PROCESS_UPDATE_INTERVAL) {
-        // Create a worker thread to collect process data without blocking the main thread
-        const worker = new Worker('./process-worker.js');
-
-        worker.on('message', (result) => {
-          cachedProcessData = result;
-          lastProcessUpdate = now;
-        });
-
-        worker.on('error', (error) => {
-          console.error('Process worker error:', error);
-        });
-
-        // Ensure worker is terminated after processing
-        worker.on('exit', (code) => {
-          if (code !== 0) {
-            console.error(`Process worker exited with code ${code}`);
-          }
-        });
-      }
 
       // Update process data only when needed
+      const now = Date.now();
       if (now - lastProcessUpdate > PROCESS_UPDATE_INTERVAL) {
         try {
           const processData = await getProcessData();
@@ -256,20 +222,16 @@ io.on("connection", (socket) => {
       const payload = {
         ts: Date.now(),
         cpu: {
-          percent: Number(Number(cpu.currentLoad).toFixed(2)),
-          // Adding per-core load
-          cores: cpu.cpus.map((c) => Number(Number(c.load).toFixed(2))),
+          percent: parseFloat(cpu.currentLoad.toFixed(2)),
           temperature: temp.main ?? null,
         },
         ram: {
-          percent: Number(
-            (((mem.total - mem.available) / mem.total) * 100).toFixed(2),
-          ),
-          used: Number(((mem.total - mem.available) / 1024 ** 3).toFixed(2)),
-          total: Number((mem.total / 1024 ** 3).toFixed(2)),
+          percent: parseFloat((((mem.total - mem.available) / mem.total) * 100).toFixed(2)),
+          used: parseFloat(((mem.total - mem.available) / 1024 ** 3).toFixed(2)),
+          total: parseFloat((mem.total / 1024 ** 3).toFixed(2)),
         },
         gpu: latestGPUData,
-        processes: [],
+        processes: cachedProcessData,
       };
 
       socket.emit("metrics", payload);

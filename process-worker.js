@@ -32,15 +32,11 @@ const getTopProcesses = async () => {
 getTopProcesses()
   .then(result => {
     parentPort.postMessage(result);
+    // Exit the worker after sending the result
+    process.exit(0);
   })
   .catch(error => {
     console.error('Worker error:', error);
     parentPort.postMessage([]);
-<<<<<<< HEAD
+    process.exit(1);
   });
-=======
-  });
-
-// Exit the worker after sending the result
-process.exit(0);
->>>>>>> 69d4cfeb7e8a4faf23328250e051255208b8f048
