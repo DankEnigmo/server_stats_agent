@@ -224,8 +224,7 @@ io.on("connection", (socket) => {
       const payload = {
         ts: Date.now(),
         cpu: {
-          percent: Number(cpu.currentLoad).toFixed(2),
-          // Removed per-core load data to reduce CPU usage
+          percent: parseFloat(cpu.currentLoad).toFixed(2),
           temperature: cachedTempData?.main ?? null,
         },
         ram: {

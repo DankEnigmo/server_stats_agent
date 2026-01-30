@@ -6,10 +6,7 @@ import time
 
 import pynvml
 
-POLL_INTERVAL = float(os.getenv("GPU_POLL_INTERVAL", "2.0"))
-
-start_time = time.time()
-iteration = 0
+POLL_INTERVAL = float(os.getenv("GPU_POLL_INTERVAL", "1.0"))
 
 
 def signal_handler(sig, frame):
@@ -24,8 +21,6 @@ def signal_handler(sig, frame):
 
 def get_GPU_data():
     """Initializes NVML, sends a single static GPU info payload, then enters a loop to send dynamic metrics."""
-    global iteration
-
     handles = []
     try:
         pynvml.nvmlInit()
@@ -55,10 +50,7 @@ def get_GPU_data():
             )
 
         # Send one-time static info payload
-        print(
-            json.dumps({"type": "status", "status": "ready", "gpus": static_gpu_info}),
-            flush=True,
-        )
+        print(json.dumps({"status": "ready", "gpus": static_gpu_info}), flush=True)
 
         time.sleep(0.1)  # Brief pause to ensure agent processes this message
 
@@ -89,7 +81,6 @@ def get_GPU_data():
     while True:
         try:
             dynamic_metrics = []
-            iteration += 1
 
             for i, handle in enumerate(handles):
                 utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
@@ -108,7 +99,7 @@ def get_GPU_data():
                     }
                 )
 
-            print(json.dumps({"type": "metrics", "gpus": dynamic_metrics}), flush=True)
+            print(json.dumps(dynamic_metrics), flush=True)
 
         except Exception as e:
             print(
