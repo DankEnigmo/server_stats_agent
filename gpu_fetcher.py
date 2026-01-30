@@ -6,7 +6,7 @@ import time
 
 import pynvml
 
-POLL_INTERVAL = float(os.getenv("GPU_POLL_INTERVAL", "2.0"))
+POLL_INTERVAL = float(os.getenv("GPU_POLL_INTERVAL", "0.5"))
 
 start_time = time.time()
 iteration = 0
@@ -124,7 +124,6 @@ def get_GPU_data():
         pynvml.nvmlShutdown()
     except Exception as e:
         print(f"Error during cleanup: {str(e)}", file=sys.stderr)
-
 
 if __name__ == "__main__":
     # Register signal handlers for graceful shutdown
