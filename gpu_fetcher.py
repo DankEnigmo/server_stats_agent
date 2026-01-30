@@ -54,9 +54,10 @@ def get_GPU_data():
                 }
             )
 
-        # Send one-time static info payload
-        # Send one-time static info payload
-        print(json.dumps({"status": "ready", "gpus": static_gpu_info}), flush=True)
+        print(
+            json.dumps({"type": "status", "status": "ready", "gpus": static_gpu_info}),
+            flush=True,
+        )
 
         time.sleep(0.1)  # Brief pause to ensure agent processes this message
 
@@ -106,7 +107,7 @@ def get_GPU_data():
                     }
                 )
 
-            print(json.dumps(dynamic_metrics), flush=True)
+            print(json.dumps({"type": "metrics", "gpus": dynamic_metrics}), flush=True)
 
         except Exception as e:
             print(
@@ -122,6 +123,7 @@ def get_GPU_data():
         pynvml.nvmlShutdown()
     except Exception as e:
         print(f"Error during cleanup: {str(e)}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     # Register signal handlers for graceful shutdown
